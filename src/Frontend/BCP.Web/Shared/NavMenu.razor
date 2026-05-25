@@ -1,0 +1,48 @@
+@inject NavigationManager Nav
+
+<div class="sidebar">
+    <div class="sidebar-brand">
+        <div style="width:44px;height:44px;background:#fff;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.5rem;color:var(--bcp-blue);font-weight:900;">B</div>
+        <h5>CobroQR</h5>
+    </div>
+
+    <nav class="flex-grow-1 py-2">
+        <AuthorizeView>
+            <Authorized>
+                <NavLink class="nav-link" href="/" Match="NavLinkMatch.All">
+                    <i class="bi bi-speedometer2"></i> Dashboard
+                </NavLink>
+
+                <AuthorizeView Roles="AdministradorSistema,OperadorCaja">
+                    <NavLink class="nav-link" href="/pagos">
+                        <i class="bi bi-credit-card"></i> Pagos QR
+                    </NavLink>
+                </AuthorizeView>
+
+                <NavLink class="nav-link" href="/qr">
+                    <i class="bi bi-qr-code"></i> Códigos QR
+                </NavLink>
+
+                <AuthorizeView Roles="AdministradorSistema,GerenteEmpresarial,SupervisorSucursal">
+                    <NavLink class="nav-link" href="/usuarios">
+                        <i class="bi bi-people"></i> Usuarios
+                    </NavLink>
+                </AuthorizeView>
+
+                <NavLink class="nav-link" href="/reportes">
+                    <i class="bi bi-file-earmark-bar-graph"></i> Reportes
+                </NavLink>
+
+                <AuthorizeView Roles="AdministradorSistema,OperadorCaja">
+                    <NavLink class="nav-link" href="/cierre-caja">
+                        <i class="bi bi-cash-stack"></i> Cierre de Caja
+                    </NavLink>
+                </AuthorizeView>
+            </Authorized>
+        </AuthorizeView>
+    </nav>
+
+    <div class="sidebar-bottom">
+        <small class="text-white-50">v1.0 &copy; BCP 2024</small>
+    </div>
+</div>

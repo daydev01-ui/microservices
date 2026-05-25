@@ -1,0 +1,291 @@
+version: '3.9'
+
+services:
+  # ─── INFRAESTRUCTURA ───────────────────────────────────────────────
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: bcp-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "BCP_Password123!"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa",
+             "-P", "BCP_Password123!", "-Q", "SELECT 1", "-C"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: bcp-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: bcp
+      RABBITMQ_DEFAULT_PASS: bcp_password
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  # ─── SIMULADOR BCP (arranca antes que payments) ───────────────────
+  bcp-stub:
+    build:
+      context: .
+      dockerfile: src/Services/BCP.Stub/Dockerfile
+    container_name: bcp-stub
+    ports:
+      - "5010:5010"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5010
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5010/api/bcp/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── MICROSERVICIOS ───────────────────────────────────────────────
+  auth-api:
+    build:
+      context: .
+      dockerfile: src/Services/BCP.Auth.API/Dockerfile
+    container_name: bcp-auth
+    ports:
+      - "5002:5002"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5002
+      ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=BCP_CobroQR;User Id=sa;Password=BCP_Password123!;TrustServerCertificate=True;MultipleActiveResultSets=True"
+      JwtSettings__SecretKey: "BCP_CobroQR_SuperSecretKey_2024_MinLength32Chars!"
+      JwtSettings__Issuer: "BCP.CobroQR"
+      JwtSettings__Audience: "BCP.CobroQR.Clients"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/api/auth/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  users-api:
+    build:
+      context: .
+      dockerfile: src/Services/BCP.Users.API/Dockerfile
+    container_name: bcp-users
+    ports:
+      - "5003:5003"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5003
+      ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=BCP_CobroQR;User Id=sa;Password=BCP_Password123!;TrustServerCertificate=True;MultipleActiveResultSets=True"
+      JwtSettings__SecretKey: "BCP_CobroQR_SuperSecretKey_2024_MinLength32Chars!"
+      JwtSettings__Issuer: "BCP.CobroQR"
+      JwtSettings__Audience: "BCP.CobroQR.Clients"
+      RabbitMQ__Url: "rabbitmq://bcp:bcp_password@rabbitmq"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  qr-api:
+    build:
+      context: .
+      dockerfile: src/Services/BCP.QR.API/Dockerfile
+    container_name: bcp-qr
+    ports:
+      - "5004:5004"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5004
+      ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=BCP_CobroQR;User Id=sa;Password=BCP_Password123!;TrustServerCertificate=True;MultipleActiveResultSets=True"
+      JwtSettings__SecretKey: "BCP_CobroQR_SuperSecretKey_2024_MinLength32Chars!"
+      JwtSettings__Issuer: "BCP.CobroQR"
+      JwtSettings__Audience: "BCP.CobroQR.Clients"
+      BCPStubUrl: "http://bcp-stub:5010"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      bcp-stub:
+        condition: service_healthy
+    restart: unless-stopped
+
+  payments-api:
+    build:
+      context: .
+      dockerfile: src/Services/BCP.Payments.API/Dockerfile
+    container_name: bcp-payments
+    ports:
+      - "5005:5005"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5005
+      ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=BCP_CobroQR;User Id=sa;Password=BCP_Password123!;TrustServerCertificate=True;MultipleActiveResultSets=True"
+      JwtSettings__SecretKey: "BCP_CobroQR_SuperSecretKey_2024_MinLength32Chars!"
+      JwtSettings__Issuer: "BCP.CobroQR"
+      JwtSettings__Audience: "BCP.CobroQR.Clients"
+      BCPStubUrl: "http://bcp-stub:5010"
+      RabbitMQ__Url: "rabbitmq://bcp:bcp_password@rabbitmq"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      bcp-stub:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5005/api/payments/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  dashboard-api:
+    build:
+      context: .
+      dockerfile: src/Services/BCP.Dashboard.API/Dockerfile
+    container_name: bcp-dashboard
+    ports:
+      - "5006:5006"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5006
+      ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=BCP_CobroQR;User Id=sa;Password=BCP_Password123!;TrustServerCertificate=True;MultipleActiveResultSets=True"
+      JwtSettings__SecretKey: "BCP_CobroQR_SuperSecretKey_2024_MinLength32Chars!"
+      JwtSettings__Issuer: "BCP.CobroQR"
+      JwtSettings__Audience: "BCP.CobroQR.Clients"
+      PaymentsApiUrl: "http://bcp-payments:5005"
+      UsersApiUrl: "http://bcp-users:5003"
+      RabbitMQ__Url: "rabbitmq://bcp:bcp_password@rabbitmq"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  reports-api:
+    build:
+      context: .
+      dockerfile: src/Services/BCP.Reports.API/Dockerfile
+    container_name: bcp-reports
+    ports:
+      - "5007:5007"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5007
+      JwtSettings__SecretKey: "BCP_CobroQR_SuperSecretKey_2024_MinLength32Chars!"
+      JwtSettings__Issuer: "BCP.CobroQR"
+      JwtSettings__Audience: "BCP.CobroQR.Clients"
+      PaymentsApiUrl: "http://bcp-payments:5005"
+    restart: unless-stopped
+
+  notifications-api:
+    build:
+      context: .
+      dockerfile: src/Services/BCP.Notifications.API/Dockerfile
+    container_name: bcp-notifications
+    ports:
+      - "5008:5008"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5008
+      ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=BCP_CobroQR;User Id=sa;Password=BCP_Password123!;TrustServerCertificate=True;MultipleActiveResultSets=True"
+      JwtSettings__SecretKey: "BCP_CobroQR_SuperSecretKey_2024_MinLength32Chars!"
+      JwtSettings__Issuer: "BCP.CobroQR"
+      JwtSettings__Audience: "BCP.CobroQR.Clients"
+      RabbitMQ__Url: "rabbitmq://bcp:bcp_password@rabbitmq"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  cashclosing-api:
+    build:
+      context: .
+      dockerfile: src/Services/BCP.CashClosing.API/Dockerfile
+    container_name: bcp-cashclosing
+    ports:
+      - "5009:5009"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5009
+      ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=BCP_CobroQR;User Id=sa;Password=BCP_Password123!;TrustServerCertificate=True;MultipleActiveResultSets=True"
+      JwtSettings__SecretKey: "BCP_CobroQR_SuperSecretKey_2024_MinLength32Chars!"
+      JwtSettings__Issuer: "BCP.CobroQR"
+      JwtSettings__Audience: "BCP.CobroQR.Clients"
+      PaymentsApiUrl: "http://bcp-payments:5005"
+      ReportsApiUrl: "http://bcp-reports:5007"
+      RabbitMQ__Url: "rabbitmq://bcp:bcp_password@rabbitmq"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ─── API GATEWAY ──────────────────────────────────────────────────
+  gateway:
+    build:
+      context: .
+      dockerfile: src/Gateway/BCP.Gateway/Dockerfile
+    container_name: bcp-gateway
+    ports:
+      - "5001:5001"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5001
+      JwtSettings__SecretKey: "BCP_CobroQR_SuperSecretKey_2024_MinLength32Chars!"
+      JwtSettings__Issuer: "BCP.CobroQR"
+      JwtSettings__Audience: "BCP.CobroQR.Clients"
+    volumes:
+      - ./src/Gateway/BCP.Gateway/ocelot.json:/app/ocelot.json:ro
+    depends_on:
+      auth-api:
+        condition: service_healthy
+      payments-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ─── FRONTEND BLAZOR ──────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: src/Frontend/BCP.Web/Dockerfile
+    container_name: bcp-web
+    ports:
+      - "5000:5000"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5000
+      GatewayUrl: "http://gateway:5001"
+      NotificationsUrl: "http://bcp-notifications:5008"
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+volumes:
+  sqlserver_data:
+  rabbitmq_data:

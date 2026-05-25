@@ -1,0 +1,165 @@
+@page "/"
+@attribute [Authorize]
+@inject ApiService Api
+@inject AuthService AuthSvc
+
+<PageTitle>Dashboard - BCP CobroQR</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold text-bcp mb-0"><i class="bi bi-speedometer2 me-2"></i>Dashboard</h4>
+    <button class="btn btn-sm btn-bcp" @onclick="Cargar">
+        <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
+    </button>
+</div>
+
+@if (_cargando)
+{
+    <div class="loading-spinner">
+        <div class="spinner-border text-primary"></div>
+    </div>
+}
+else if (_resumen != null)
+{
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="stat-value">@_resumen.TotalTransacciones</div>
+                        <div class="stat-label">Total Transacciones</div>
+                    </div>
+                    <div class="stat-icon bg-primary bg-opacity-10 text-primary">
+                        <i class="bi bi-arrow-left-right"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="stat-value text-success">@_resumen.TransaccionesConfirmadas</div>
+                        <div class="stat-label">Confirmadas</div>
+                    </div>
+                    <div class="stat-icon bg-success bg-opacity-10 text-success">
+                        <i class="bi bi-check-circle"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="stat-value text-danger">@_resumen.TransaccionesRechazadas</div>
+                        <div class="stat-label">Rechazadas</div>
+                    </div>
+                    <div class="stat-icon bg-danger bg-opacity-10 text-danger">
+                        <i class="bi bi-x-circle"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="stat-value">S/ @_resumen.MontoTotal.ToString("N2")</div>
+                        <div class="stat-label">Monto Total</div>
+                    </div>
+                    <div class="stat-icon bg-warning bg-opacity-10 text-warning">
+                        <i class="bi bi-cash-coin"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (_resumen.TotalEmpresas.HasValue)
+    {
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value">@_resumen.TotalEmpresas</div>
+                    <div class="stat-label">Total Empresas</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value text-success">@_resumen.EmpresasActivas</div>
+                    <div class="stat-label">Empresas Activas</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value">@_resumen.TotalSucursales</div>
+                    <div class="stat-label">Sucursales</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value text-info">@_resumen.CajasAbiertas</div>
+                    <div class="stat-label">Cajas Abiertas</div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="table-card">
+        <h6 class="fw-semibold mb-3"><i class="bi bi-clock-history me-1 text-bcp"></i>Últimas Transacciones</h6>
+        @if (_resumen.UltimasTransacciones.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Referencia</th>
+                            <th>Monto</th>
+                            <th>Estado</th>
+                            <th>Fecha</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in _resumen.UltimasTransacciones)
+                        {
+                            <tr>
+                                <td class="text-muted small">@t.IdTransaccion.ToString()[..8]…</td>
+                                <td>@t.ReferenciaCliente</td>
+                                <td class="fw-semibold">S/ @t.Monto.ToString("N2")</td>
+                                <td><EstadoBadge Estado="@t.Estado" /></td>
+                                <td class="text-muted small">@t.FechaHora.ToString("dd/MM/yy HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <p class="text-muted text-center py-3 mb-0">No hay transacciones recientes.</p>
+        }
+    </div>
+}
+else
+{
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle me-1"></i>No se pudo cargar el dashboard.
+        <button class="btn btn-sm btn-warning ms-2" @onclick="Cargar">Reintentar</button>
+    </div>
+}
+
+@code {
+    private Models.ResumenDashboard? _resumen;
+    private bool _cargando = true;
+
+    protected override async Task OnInitializedAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        StateHasChanged();
+        _resumen = await Api.ObtenerResumenDashboardAsync();
+        _cargando = false;
+    }
+}

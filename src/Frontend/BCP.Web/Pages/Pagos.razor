@@ -1,0 +1,143 @@
+@page "/pagos"
+@attribute [Authorize(Roles = "AdministradorSistema,OperadorCaja")]
+@inject ApiService Api
+@inject AuthService AuthSvc
+@inject IJSRuntime JS
+
+<PageTitle>Pagos QR - BCP CobroQR</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold text-bcp mb-0"><i class="bi bi-credit-card me-2"></i>Pagos QR</h4>
+    <button class="btn btn-sm btn-bcp" @onclick="CargarTransacciones">
+        <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
+    </button>
+</div>
+
+<div class="row g-4">
+    <!-- Panel verificar pago -->
+    <div class="col-12 col-lg-5">
+        <div class="table-card">
+            <h6 class="fw-semibold mb-3"><i class="bi bi-qr-code-scan me-1 text-bcp"></i>Verificar Pago</h6>
+
+            @if (!string.IsNullOrEmpty(_msgPago))
+            {
+                <div class="alert @(_pagoOk ? "alert-success" : "alert-danger") py-2 small">
+                    <i class="bi @(_pagoOk ? "bi-check-circle" : "bi-exclamation-triangle") me-1"></i>@_msgPago
+                </div>
+            }
+
+            @if (_pagoResp != null && _pagoOk)
+            {
+                <div class="alert alert-success py-2 small mb-3">
+                    <div><strong>Código:</strong> @_pagoResp.CodigoAutorizacion</div>
+                    <div><strong>Monto:</strong> S/ @_pagoResp.Monto.ToString("N2")</div>
+                    <div><strong>Estado:</strong> @_pagoResp.Estado</div>
+                    @if (_pagoResp.EsIdempotente)
+                    { <div class="text-warning"><i class="bi bi-info-circle me-1"></i>Transacción duplicada (idempotente)</div> }
+                </div>
+            }
+
+            <EditForm Model="_req" OnValidSubmit="VerificarPago">
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold">Código QR</label>
+                    <InputText @bind-Value="_req.CodigoQR" class="form-control form-control-sm" placeholder="Escanear o ingresar código..." />
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold">Monto (S/)</label>
+                    <InputNumber @bind-Value="_req.Monto" class="form-control form-control-sm" placeholder="0.00" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">Referencia Cliente</label>
+                    <InputText @bind-Value="_req.ReferenciaCliente" class="form-control form-control-sm" placeholder="Nombre o DNI..." />
+                </div>
+                <button type="submit" class="btn btn-bcp btn-sm w-100" disabled="@_procesando">
+                    @if (_procesando) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    <i class="bi bi-send me-1"></i>Procesar Pago
+                </button>
+            </EditForm>
+        </div>
+    </div>
+
+    <!-- Listado transacciones -->
+    <div class="col-12 col-lg-7">
+        <div class="table-card">
+            <h6 class="fw-semibold mb-3"><i class="bi bi-list-ul me-1 text-bcp"></i>Transacciones</h6>
+            @if (_cargando)
+            {
+                <div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+            }
+            else if (_transacciones.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Ref.</th>
+                                <th>Monto</th>
+                                <th>Estado</th>
+                                <th>Fecha</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var t in _transacciones)
+                            {
+                                <tr>
+                                    <td class="small">@t.ReferenciaCliente</td>
+                                    <td class="fw-semibold">S/ @t.Monto.ToString("N2")</td>
+                                    <td><EstadoBadge Estado="@t.Estado" /></td>
+                                    <td class="text-muted small">@t.FechaHora.ToString("dd/MM HH:mm")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted text-center py-4 mb-0">No hay transacciones.</p>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly Models.VerificarPagoRequest _req = new();
+    private List<Models.TransaccionDto> _transacciones = new();
+    private Models.VerificarPagoResponse? _pagoResp;
+    private string? _msgPago;
+    private bool _pagoOk;
+    private bool _procesando;
+    private bool _cargando = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var usuario = await AuthSvc.ObtenerUsuarioAsync();
+        if (usuario?.IdSucursal.HasValue == true)
+        {
+            _req.SucursalId = usuario.IdSucursal.Value;
+            _req.UsuarioId = usuario.IdUsuario;
+        }
+        await CargarTransacciones();
+    }
+
+    private async Task CargarTransacciones()
+    {
+        _cargando = true;
+        _transacciones = await Api.ObtenerTransaccionesAsync();
+        _cargando = false;
+    }
+
+    private async Task VerificarPago()
+    {
+        _procesando = true;
+        _msgPago = null;
+        _pagoResp = null;
+        var (ok, data, msg) = await Api.VerificarPagoAsync(_req);
+        _pagoOk = ok;
+        _pagoResp = data;
+        _msgPago = msg;
+        _procesando = false;
+        if (ok) await CargarTransacciones();
+        await JS.InvokeVoidAsync("bcpApp.showToast", msg, ok ? "success" : "error");
+    }
+}

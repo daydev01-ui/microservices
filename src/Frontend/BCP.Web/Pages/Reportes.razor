@@ -1,0 +1,106 @@
+@page "/reportes"
+@attribute [Authorize]
+@inject ApiService Api
+@inject IJSRuntime JS
+
+<PageTitle>Reportes - BCP CobroQR</PageTitle>
+
+<div class="mb-4">
+    <h4 class="fw-bold text-bcp mb-0"><i class="bi bi-file-earmark-bar-graph me-2"></i>Reportes</h4>
+</div>
+
+<div class="row g-4">
+    <div class="col-12 col-lg-5">
+        <div class="table-card">
+            <h6 class="fw-semibold mb-3"><i class="bi bi-sliders me-1 text-bcp"></i>Generar Reporte</h6>
+
+            @if (!string.IsNullOrEmpty(_msg))
+            {
+                <div class="alert @(_ok ? "alert-success" : "alert-danger") py-2 small alert-dismissible">
+                    @_msg
+                    <button type="button" class="btn-close btn-sm" @onclick="() => _msg = null"></button>
+                </div>
+            }
+
+            <div class="mb-2">
+                <label class="form-label small fw-semibold">Tipo de Reporte</label>
+                <select class="form-select form-select-sm" @bind="_req.Tipo">
+                    <option value="Transacciones">Transacciones</option>
+                    <option value="Cierre">Cierre de Caja</option>
+                    <option value="Resumen">Resumen Ejecutivo</option>
+                </select>
+            </div>
+            <div class="mb-2">
+                <label class="form-label small fw-semibold">Formato</label>
+                <select class="form-select form-select-sm" @bind="_req.Formato">
+                    <option value="Excel">Excel (.xlsx)</option>
+                    <option value="PDF">PDF</option>
+                    <option value="CSV">CSV</option>
+                </select>
+            </div>
+            <div class="row g-2 mb-2">
+                <div class="col">
+                    <label class="form-label small fw-semibold">Desde</label>
+                    <input type="date" class="form-control form-control-sm"
+                           value="@_req.PeriodoInicio.ToString("yyyy-MM-dd")"
+                           @onchange="e => _req.PeriodoInicio = DateTime.Parse(e.Value!.ToString()!)" />
+                </div>
+                <div class="col">
+                    <label class="form-label small fw-semibold">Hasta</label>
+                    <input type="date" class="form-control form-control-sm"
+                           value="@_req.PeriodoFin.ToString("yyyy-MM-dd")"
+                           @onchange="e => _req.PeriodoFin = DateTime.Parse(e.Value!.ToString()!)" />
+                </div>
+            </div>
+            <button class="btn btn-bcp btn-sm w-100 mt-2" @onclick="Generar" disabled="@_generando">
+                @if (_generando) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                <i class="bi bi-download me-1"></i>Generar y Descargar
+            </button>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-7">
+        <div class="table-card h-100">
+            <h6 class="fw-semibold mb-3"><i class="bi bi-info-circle me-1 text-bcp"></i>Información</h6>
+            <div class="list-group list-group-flush">
+                <div class="list-group-item border-0 px-0">
+                    <div class="fw-semibold small">Reporte de Transacciones</div>
+                    <div class="text-muted small">Detalle completo de todas las transacciones del período seleccionado.</div>
+                </div>
+                <div class="list-group-item border-0 px-0">
+                    <div class="fw-semibold small">Reporte de Cierre de Caja</div>
+                    <div class="text-muted small">Resumen de cierres de caja con montos y totales por sucursal.</div>
+                </div>
+                <div class="list-group-item border-0 px-0">
+                    <div class="fw-semibold small">Resumen Ejecutivo</div>
+                    <div class="text-muted small">KPIs principales y métricas de rendimiento del período.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly Models.GenerarReporteRequest _req = new();
+    private string? _msg;
+    private bool _ok;
+    private bool _generando;
+
+    private async Task Generar()
+    {
+        _generando = true;
+        _msg = null;
+        var (ok, data, msg) = await Api.GenerarReporteAsync(_req);
+        _ok = ok;
+        _msg = msg;
+        if (ok && data != null)
+        {
+            var ext = _req.Formato.ToLower() switch { "pdf" => "pdf", "csv" => "csv", _ => "xlsx" };
+            var mime = _req.Formato.ToLower() switch { "pdf" => "application/pdf", "csv" => "text/csv", _ => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
+            var b64 = Convert.ToBase64String(data);
+            await JS.InvokeVoidAsync("bcpApp.downloadFile", $"reporte_{_req.Tipo}_{DateTime.Now:yyyyMMdd}.{ext}", b64, mime);
+        }
+        _generando = false;
+        await JS.InvokeVoidAsync("bcpApp.showToast", _msg, ok ? "success" : "error");
+    }
+}

@@ -1,0 +1,82 @@
+@page "/usuarios"
+@attribute [Authorize(Roles = "AdministradorSistema,GerenteEmpresarial,SupervisorSucursal")]
+@inject ApiService Api
+
+<PageTitle>Usuarios - BCP CobroQR</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold text-bcp mb-0"><i class="bi bi-people me-2"></i>Usuarios</h4>
+    <button class="btn btn-bcp btn-sm" @onclick="Cargar">
+        <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
+    </button>
+</div>
+
+<div class="table-card">
+    @if (_cargando)
+    {
+        <div class="text-center py-4"><div class="spinner-border text-primary"></div></div>
+    }
+    else if (_usuarios.Any())
+    {
+        <div class="mb-3">
+            <input class="form-control form-control-sm w-auto" placeholder="Buscar..." @bind="_busqueda" @bind:event="oninput" />
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Email</th>
+                        <th>Rol</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in UsuariosFiltrados)
+                    {
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div style="width:32px;height:32px;background:var(--bcp-blue);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.8rem;font-weight:600;">
+                                        @u.Nombre.Substring(0, 1).ToUpper()
+                                    </div>
+                                    @u.Nombre
+                                </div>
+                            </td>
+                            <td class="text-muted small">@u.Email</td>
+                            <td><span class="badge bg-primary bg-opacity-10 text-primary rounded-pill">@u.Rol</span></td>
+                            <td><EstadoBadge Estado="@u.Estado" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <p class="text-muted text-center py-4 mb-0">No hay usuarios registrados.</p>
+    }
+</div>
+
+@code {
+    private List<Models.UsuarioDto> _usuarios = new();
+    private string _busqueda = "";
+    private bool _cargando = true;
+
+    private IEnumerable<Models.UsuarioDto> UsuariosFiltrados =>
+        string.IsNullOrEmpty(_busqueda)
+            ? _usuarios
+            : _usuarios.Where(u =>
+                u.Nombre.Contains(_busqueda, StringComparison.OrdinalIgnoreCase) ||
+                u.Email.Contains(_busqueda, StringComparison.OrdinalIgnoreCase) ||
+                u.Rol.Contains(_busqueda, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        _usuarios = await Api.ObtenerUsuariosAsync();
+        _cargando = false;
+    }
+}

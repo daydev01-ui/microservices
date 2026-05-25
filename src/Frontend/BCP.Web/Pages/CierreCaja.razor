@@ -1,0 +1,147 @@
+@page "/cierre-caja"
+@attribute [Authorize(Roles = "AdministradorSistema,OperadorCaja")]
+@inject ApiService Api
+@inject IJSRuntime JS
+
+<PageTitle>Cierre de Caja - BCP CobroQR</PageTitle>
+
+<div class="mb-4">
+    <h4 class="fw-bold text-bcp mb-0"><i class="bi bi-cash-stack me-2"></i>Cierre de Caja</h4>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg))
+{
+    <div class="alert @(_ok ? "alert-success" : "alert-danger") py-2 small alert-dismissible mb-3">
+        @_msg
+        <button type="button" class="btn-close btn-sm" @onclick="() => _msg = null"></button>
+    </div>
+}
+
+<div class="row g-4">
+    <!-- Caja Activa -->
+    <div class="col-12 col-lg-5">
+        <div class="table-card">
+            <h6 class="fw-semibold mb-3"><i class="bi bi-cash-coin me-1 text-bcp"></i>Caja Actual</h6>
+
+            @if (_cargando)
+            {
+                <div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+            }
+            else if (_cajaActiva != null)
+            {
+                <div class="mb-3 p-3 bg-success bg-opacity-10 rounded">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="small fw-semibold">Estado</span>
+                        <EstadoBadge Estado="@_cajaActiva.Estado" />
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="small text-muted">Apertura</span>
+                        <span class="small fw-semibold">@_cajaActiva.FechaInicio.ToString("dd/MM/yyyy HH:mm")</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="small text-muted">Transacciones</span>
+                        <span class="small fw-semibold">@_cajaActiva.TotalTransacciones</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="small text-muted">Total Cobrado</span>
+                        <span class="fw-bold text-success">S/ @_cajaActiva.TotalCobrado.ToString("N2")</span>
+                    </div>
+                </div>
+                <button class="btn btn-danger btn-sm w-100" @onclick="CerrarCaja" disabled="@_procesando">
+                    @if (_procesando) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    <i class="bi bi-lock me-1"></i>Cerrar Caja
+                </button>
+            }
+            else
+            {
+                <div class="text-center py-3 text-muted">
+                    <i class="bi bi-cash-coin" style="font-size:2.5rem;"></i>
+                    <p class="mb-3 mt-2">No hay caja abierta</p>
+                    <button class="btn btn-bcp btn-sm" @onclick="AbrirCaja" disabled="@_procesando">
+                        @if (_procesando) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        <i class="bi bi-unlock me-1"></i>Abrir Caja
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Historial -->
+    <div class="col-12 col-lg-7">
+        <div class="table-card">
+            <h6 class="fw-semibold mb-3"><i class="bi bi-clock-history me-1 text-bcp"></i>Historial de Cierres</h6>
+            @if (_historial.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Apertura</th>
+                                <th>Cierre</th>
+                                <th>Trans.</th>
+                                <th>Total</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var c in _historial)
+                            {
+                                <tr>
+                                    <td class="small">@c.FechaInicio.ToString("dd/MM HH:mm")</td>
+                                    <td class="small text-muted">@(c.FechaCierre.HasValue ? c.FechaCierre.Value.ToString("dd/MM HH:mm") : "-")</td>
+                                    <td>@c.TotalTransacciones</td>
+                                    <td class="fw-semibold">S/ @c.TotalCobrado.ToString("N2")</td>
+                                    <td><EstadoBadge Estado="@c.Estado" /></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted text-center py-4 mb-0">No hay cierres registrados.</p>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private Models.CierreCajaDto? _cajaActiva;
+    private List<Models.CierreCajaDto> _historial = new();
+    private string? _msg;
+    private bool _ok;
+    private bool _cargando = true;
+    private bool _procesando;
+
+    protected override async Task OnInitializedAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        _cajaActiva = await Api.ObtenerCajaActivaAsync();
+        _historial = await Api.ObtenerHistorialCajasAsync();
+        _cargando = false;
+    }
+
+    private async Task AbrirCaja()
+    {
+        _procesando = true;
+        var (ok, data, msg) = await Api.AbrirCajaAsync();
+        _ok = ok; _msg = msg;
+        if (ok) _cajaActiva = data;
+        _procesando = false;
+        await JS.InvokeVoidAsync("bcpApp.showToast", msg, ok ? "success" : "error");
+    }
+
+    private async Task CerrarCaja()
+    {
+        if (_cajaActiva == null) return;
+        _procesando = true;
+        var (ok, data, msg) = await Api.CerrarCajaAsync(_cajaActiva.IdCierre);
+        _ok = ok; _msg = msg;
+        if (ok) { _cajaActiva = null; await Cargar(); }
+        _procesando = false;
+        await JS.InvokeVoidAsync("bcpApp.showToast", msg, ok ? "success" : "error");
+    }
+}

@@ -1,0 +1,122 @@
+@page "/qr"
+@attribute [Authorize]
+@inject ApiService Api
+@inject AuthService AuthSvc
+@inject IJSRuntime JS
+
+<PageTitle>Códigos QR - BCP CobroQR</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold text-bcp mb-0"><i class="bi bi-qr-code me-2"></i>Códigos QR</h4>
+    <button class="btn btn-bcp btn-sm" @onclick="GenerarQR" disabled="@_generando">
+        @if (_generando) { <span class="spinner-border spinner-border-sm me-1"></span> }
+        <i class="bi bi-plus-circle me-1"></i>Generar Nuevo QR
+    </button>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg))
+{
+    <div class="alert @(_qrGenerado != null ? "alert-success" : "alert-danger") alert-dismissible py-2 small mb-3">
+        @_msg
+        <button type="button" class="btn-close btn-sm" @onclick="() => _msg = null"></button>
+    </div>
+}
+
+@if (_qrGenerado != null)
+{
+    <div class="table-card mb-4">
+        <h6 class="fw-semibold mb-3 text-success"><i class="bi bi-check-circle me-1"></i>QR Generado</h6>
+        <div class="row align-items-center">
+            <div class="col-auto">
+                @if (!string.IsNullOrEmpty(_qrGenerado.ImagenBase64))
+                {
+                    <img src="data:image/png;base64,@_qrGenerado.ImagenBase64" class="qr-image" alt="QR" />
+                }
+                else
+                {
+                    <div class="qr-container border rounded p-3">
+                        <i class="bi bi-qr-code" style="font-size:6rem;color:var(--bcp-blue);"></i>
+                    </div>
+                }
+            </div>
+            <div class="col">
+                <p class="mb-1"><strong>Código:</strong></p>
+                <div class="input-group input-group-sm mb-2">
+                    <input type="text" class="form-control" value="@_qrGenerado.CodigoQR" readonly />
+                    <button class="btn btn-outline-secondary" @onclick='() => JS.InvokeVoidAsync("bcpApp.copyToClipboard", _qrGenerado.CodigoQR)'>
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                </div>
+                <p class="mb-1 small"><strong>Estado:</strong> <EstadoBadge Estado="@_qrGenerado.Estado" /></p>
+                <p class="mb-0 text-muted small">Emitido: @_qrGenerado.FechaEmision.ToString("dd/MM/yyyy HH:mm")</p>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="table-card">
+    <h6 class="fw-semibold mb-3"><i class="bi bi-grid-3x3-gap me-1 text-bcp"></i>QRs Activos</h6>
+    @if (_cargando)
+    {
+        <div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+    }
+    else if (_qrs.Any())
+    {
+        <div class="row g-3">
+            @foreach (var qr in _qrs)
+            {
+                <div class="col-12 col-md-6 col-lg-4">
+                    <div class="border rounded p-3">
+                        @if (!string.IsNullOrEmpty(qr.ImagenBase64))
+                        {
+                            <img src="data:image/png;base64,@qr.ImagenBase64" class="w-100 rounded mb-2" style="max-height:160px;object-fit:contain;" alt="QR" />
+                        }
+                        else
+                        {
+                            <div class="text-center py-3"><i class="bi bi-qr-code" style="font-size:4rem;color:var(--bcp-blue);"></i></div>
+                        }
+                        <p class="mb-1 small text-truncate"><strong>@qr.CodigoQR</strong></p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <EstadoBadge Estado="@qr.Estado" />
+                            <small class="text-muted">@qr.FechaEmision.ToString("dd/MM/yy")</small>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <p class="text-muted text-center py-4 mb-0">No hay códigos QR disponibles.</p>
+    }
+</div>
+
+@code {
+    private List<Models.QRDto> _qrs = new();
+    private Models.QRDto? _qrGenerado;
+    private string? _msg;
+    private bool _cargando = true;
+    private bool _generando;
+
+    protected override async Task OnInitializedAsync() => await CargarQRs();
+
+    private async Task CargarQRs()
+    {
+        _cargando = true;
+        _qrs = await Api.ObtenerQRsAsync();
+        _cargando = false;
+    }
+
+    private async Task GenerarQR()
+    {
+        _generando = true;
+        _qrGenerado = null;
+        var usuario = await AuthSvc.ObtenerUsuarioAsync();
+        var sucursalId = usuario?.IdSucursal ?? Guid.Empty;
+        var (ok, data, msg) = await Api.GenerarQRAsync(sucursalId);
+        _msg = msg;
+        if (ok) { _qrGenerado = data; await CargarQRs(); }
+        _generando = false;
+        await JS.InvokeVoidAsync("bcpApp.showToast", msg, ok ? "success" : "error");
+    }
+}

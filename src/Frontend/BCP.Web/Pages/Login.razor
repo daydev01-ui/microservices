@@ -1,0 +1,89 @@
+@page "/login"
+@layout EmptyLayout
+@inject AuthService AuthSvc
+@inject NavigationManager Nav
+@inject BcpAuthStateProvider AuthState
+
+<PageTitle>Iniciar Sesión - BCP CobroQR</PageTitle>
+
+<div class="login-page">
+    <div class="login-card">
+        <div class="login-logo">
+            <div class="logo-circle">
+                <i class="bi bi-bank2"></i>
+            </div>
+            <h4 class="fw-bold text-bcp mb-0">BCP CobroQR</h4>
+            <p class="text-muted small">Sistema de Cobros con Código QR</p>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-danger py-2 small">
+                <i class="bi bi-exclamation-triangle me-1"></i>@_error
+            </div>
+        }
+
+        <EditForm Model="_form" OnValidSubmit="DoLogin">
+            <DataAnnotationsValidator />
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold small">Correo electrónico</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                    <InputText @bind-Value="_form.Email" class="form-control" placeholder="correo@empresa.com" type="email" />
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="form-label fw-semibold small">Contraseña</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                    <InputText @bind-Value="_form.Password" class="form-control" placeholder="••••••••" type="password" />
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-bcp w-100 py-2 fw-semibold" disabled="@_loading">
+                @if (_loading)
+                {
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                }
+                <i class="bi bi-box-arrow-in-right me-1"></i>Ingresar
+            </button>
+        </EditForm>
+
+        <div class="mt-3 text-center">
+            <small class="text-muted">Demo: <strong>admin@bcp.com</strong> / Admin123!</small>
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    private readonly Models.LoginRequest _form = new();
+    private string? _error;
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (await AuthSvc.EstaAutenticadoAsync())
+            Nav.NavigateTo("/");
+    }
+
+    private async Task DoLogin()
+    {
+        _loading = true;
+        _error = null;
+        var (ok, msg) = await AuthSvc.LoginAsync(_form);
+        if (ok)
+        {
+            AuthState.NotificarCambioEstado();
+            Nav.NavigateTo(ReturnUrl ?? "/", forceLoad: true);
+        }
+        else
+        {
+            _error = msg;
+            _loading = false;
+        }
+    }
+}

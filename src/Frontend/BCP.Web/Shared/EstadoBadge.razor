@@ -1,0 +1,14 @@
+@if (!string.IsNullOrEmpty(Estado))
+{
+    var css = Estado.ToLower() switch {
+        "confirmado" or "aprobado" or "activo" => "badge-confirmado",
+        "pendiente" or "procesando" => "badge-pendiente",
+        "rechazado" or "fallido" or "inactivo" => "badge-rechazado",
+        _ => "badge-procesando"
+    };
+    <span class="badge @css rounded-pill px-2">@Estado</span>
+}
+
+@code {
+    [Parameter] public string Estado { get; set; } = "";
+}
