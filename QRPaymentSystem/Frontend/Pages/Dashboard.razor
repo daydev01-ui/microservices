@@ -1,0 +1,115 @@
+@page "/"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject Frontend.Services.ApiService Api
+@using System.Text.Json
+
+<PageTitle>Dashboard - BCP QR System</PageTitle>
+
+<h2 class="mb-4"><i class="bi bi-speedometer2 text-primary me-2"></i>Dashboard</h2>
+
+@if (isLoading)
+{
+    <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+}
+else
+{
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm text-white bg-primary">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <p class="mb-1 opacity-75">Total Transacciones</p>
+                            <h3 class="fw-bold">@totalTx</h3>
+                        </div>
+                        <i class="bi bi-arrow-left-right" style="font-size:2rem;opacity:0.5"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm text-white bg-success">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <p class="mb-1 opacity-75">Validadas</p>
+                            <h3 class="fw-bold">@validadas</h3>
+                        </div>
+                        <i class="bi bi-check-circle" style="font-size:2rem;opacity:0.5"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm text-white bg-danger">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <p class="mb-1 opacity-75">Rechazadas</p>
+                            <h3 class="fw-bold">@rechazadas</h3>
+                        </div>
+                        <i class="bi bi-x-circle" style="font-size:2rem;opacity:0.5"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm text-white bg-warning">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <p class="mb-1 opacity-75">Monto Total (BOB)</p>
+                            <h3 class="fw-bold">@montoTotal.ToString("N2")</h3>
+                        </div>
+                        <i class="bi bi-currency-dollar" style="font-size:2rem;opacity:0.5"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">Tasa de Éxito</h5>
+                    <div class="progress mt-3" style="height:25px">
+                        <div class="progress-bar bg-success" style="width:@tasaExito%">@tasaExito%</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">Acciones Rápidas</h5>
+                    <div class="d-flex gap-2 mt-3">
+                        <a href="/qr/generate" class="btn btn-primary"><i class="bi bi-qr-code me-1"></i>Generar QR</a>
+                        <a href="/qr/validate" class="btn btn-success"><i class="bi bi-check me-1"></i>Validar Pago</a>
+                        <a href="/reports" class="btn btn-info text-white"><i class="bi bi-bar-chart me-1"></i>Reportes</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private int totalTx, validadas, rechazadas;
+    private decimal montoTotal, tasaExito;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var data = await Api.GetAsync<JsonElement>("/reports/api/reports");
+        if (data.HasValue)
+        {
+            totalTx = data.Value.GetProperty("totalTransacciones").GetInt32();
+            validadas = data.Value.GetProperty("totalValidadas").GetInt32();
+            rechazadas = data.Value.GetProperty("totalRechazadas").GetInt32();
+            montoTotal = data.Value.GetProperty("montoTotal").GetDecimal();
+            tasaExito = data.Value.GetProperty("tasaExito").GetDecimal();
+        }
+        isLoading = false;
+    }
+}

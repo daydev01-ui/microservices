@@ -1,0 +1,131 @@
+@page "/users"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrador")]
+@inject Frontend.Services.ApiService Api
+@using System.Text.Json
+
+<PageTitle>Usuarios - BCP QR System</PageTitle>
+
+<h2 class="mb-4"><i class="bi bi-people text-primary me-2"></i>Gestión de Usuarios</h2>
+
+@if (!string.IsNullOrEmpty(msg))
+    <div class="alert alert-@msgType alert-dismissible">@msg <button type="button" class="btn-close" @onclick="()=>msg=string.Empty"></button></div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3"><input class="form-control" placeholder="Nombre" @bind="form.NombreCompleto" /></div>
+            <div class="col-md-3"><input class="form-control" type="email" placeholder="Correo" @bind="form.CorreoElectronico" /></div>
+            <div class="col-md-2"><input class="form-control" type="password" placeholder="Contraseña" @bind="form.Contraseña" /></div>
+            <div class="col-md-1"><input class="form-control" type="number" placeholder="Rol ID" @bind="form.IdRol" /></div>
+            <div class="col-md-1"><input class="form-control" type="number" placeholder="Empresa ID" @bind="form.IdEmpresa" /></div>
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100" @onclick="SaveUser">
+                    <i class="bi bi-@(editingId.HasValue ? "pencil" : "plus-circle") me-1"></i>
+                    @(editingId.HasValue ? "Actualizar" : "Crear")
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (isLoading)
+    <div class="text-center py-4"><div class="spinner-border text-primary"></div></div>
+else
+{
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="table-dark">
+                    <tr><th>ID</th><th>Nombre</th><th>Correo</th><th>Rol</th><th>Empresa</th><th>Estado</th><th>Acciones</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in users)
+                    {
+                        <tr>
+                            <td>@u.GetProperty("idUsuario").GetInt32()</td>
+                            <td>@u.GetProperty("nombreCompleto").GetString()</td>
+                            <td>@u.GetProperty("correoElectronico").GetString()</td>
+                            <td>@(u.TryGetProperty("nombreRol", out var r) ? r.GetString() : "")</td>
+                            <td>@(u.TryGetProperty("nombreEmpresa", out var e) ? e.GetString() : "")</td>
+                            <td><span class="badge @(u.GetProperty("estadoUsuario").GetString() == "Activo" ? "bg-success" : "bg-secondary")">@u.GetProperty("estadoUsuario").GetString()</span></td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary me-1" @onclick="()=>EditUser(u)">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="()=>DeleteUser(u.GetProperty("idUsuario").GetInt32())">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private List<JsonElement> users = new();
+    private UserForm form = new();
+    private int? editingId = null;
+    private string msg = "", msgType = "success";
+
+    protected override async Task OnInitializedAsync() => await LoadUsers();
+
+    private async Task LoadUsers()
+    {
+        isLoading = true;
+        var data = await Api.GetAsync<JsonElement[]>("/auth/api/users");
+        users = data?.Select(x => x).ToList() ?? new();
+        isLoading = false;
+    }
+
+    private void EditUser(JsonElement u)
+    {
+        editingId = u.GetProperty("idUsuario").GetInt32();
+        form.NombreCompleto = u.GetProperty("nombreCompleto").GetString() ?? "";
+        form.CorreoElectronico = u.GetProperty("correoElectronico").GetString() ?? "";
+        form.IdRol = u.GetProperty("idRol").GetInt32();
+        form.IdEmpresa = u.GetProperty("idEmpresa").GetInt32();
+        form.EstadoUsuario = u.GetProperty("estadoUsuario").GetString() ?? "Activo";
+    }
+
+    private async Task SaveUser()
+    {
+        if (editingId.HasValue)
+        {
+            var (ok, err) = await Api.PutAsync($"/auth/api/users/{editingId}",
+                new { form.NombreCompleto, form.CorreoElectronico, form.EstadoUsuario, form.IdRol, form.IdEmpresa });
+            msg = ok ? "Usuario actualizado" : "Error al actualizar";
+            msgType = ok ? "success" : "danger";
+        }
+        else
+        {
+            var (ok, data, err) = await Api.PostAsync<JsonElement>("/auth/api/users",
+                new { form.NombreCompleto, form.CorreoElectronico, form.Contraseña, form.IdRol, form.IdEmpresa });
+            msg = ok ? "Usuario creado" : "Error al crear";
+            msgType = ok ? "success" : "danger";
+        }
+        editingId = null; form = new();
+        await LoadUsers();
+    }
+
+    private async Task DeleteUser(int id)
+    {
+        var (ok, err) = await Api.DeleteAsync($"/auth/api/users/{id}");
+        msg = ok ? "Usuario desactivado" : "Error al eliminar";
+        msgType = ok ? "success" : "danger";
+        await LoadUsers();
+    }
+
+    class UserForm
+    {
+        public string NombreCompleto { get; set; } = "";
+        public string CorreoElectronico { get; set; } = "";
+        public string Contraseña { get; set; } = "";
+        public string EstadoUsuario { get; set; } = "Activo";
+        public int IdRol { get; set; } = 1;
+        public int IdEmpresa { get; set; } = 1;
+    }
+}

@@ -1,0 +1,75 @@
+@page "/qr/generate"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject Frontend.Services.ApiService Api
+@using System.Text.Json
+
+<PageTitle>Generar QR - BCP QR System</PageTitle>
+
+<h2 class="mb-4"><i class="bi bi-qr-code-scan text-primary me-2"></i>Generar Código QR</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title mb-4">Datos del Pago</h5>
+                @if (!string.IsNullOrEmpty(errorMsg))
+                    <div class="alert alert-danger">@errorMsg</div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">ID de Empresa</label>
+                    <input type="number" class="form-control" @bind="empresaId" min="1" />
+                </div>
+                <div class="mb-4">
+                    <label class="form-label fw-semibold">Monto (BOB)</label>
+                    <div class="input-group">
+                        <span class="input-group-text">Bs.</span>
+                        <input type="number" class="form-control" @bind="monto" min="0.01" step="0.01" />
+                    </div>
+                </div>
+                <button class="btn btn-primary w-100" @onclick="GenerateQR" disabled="@isLoading">
+                    @if (isLoading) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                    <i class="bi bi-qr-code me-2"></i>Generar QR
+                </button>
+            </div>
+        </div>
+    </div>
+    @if (qrResult != null)
+    {
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm text-center">
+                <div class="card-body">
+                    <h5 class="card-title mb-3 text-success"><i class="bi bi-check-circle me-2"></i>QR Generado</h5>
+                    <img src="data:image/png;base64,@qrResult.Value.GetProperty("qRImageBase64").GetString()"
+                         alt="QR Code" class="img-fluid mb-3" style="max-width:250px" />
+                    <div class="bg-light rounded p-3 text-start">
+                        <p class="mb-1"><strong>Código:</strong> <code>@qrResult.Value.GetProperty("codigoQR").GetString()</code></p>
+                        <p class="mb-1"><strong>Monto:</strong> Bs. @qrResult.Value.GetProperty("monto").GetDecimal().ToString("N2")</p>
+                        <p class="mb-0"><strong>Estado:</strong> <span class="badge bg-success">@qrResult.Value.GetProperty("estadoQR").GetString()</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private int empresaId = 1;
+    private decimal monto = 100;
+    private bool isLoading = false;
+    private string errorMsg = "";
+    private JsonElement? qrResult = null;
+
+    private async Task GenerateQR()
+    {
+        isLoading = true; errorMsg = ""; qrResult = null;
+        var (success, data, error) = await Api.PostAsync<JsonElement>(
+            "/qr/api/qr/generate",
+            new { empresaId, monto });
+
+        if (success && data.HasValue)
+            qrResult = data;
+        else
+            errorMsg = "Error al generar el QR. Verifique los datos.";
+        isLoading = false;
+    }
+}

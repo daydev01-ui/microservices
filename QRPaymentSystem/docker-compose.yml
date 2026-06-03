@@ -1,0 +1,144 @@
+version: '3.8'
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: bcp-sqlserver
+    environment:
+      SA_PASSWORD: "YourPassword123"
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+      - ./Database/Scripts:/scripts
+    healthcheck:
+      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourPassword123" -Q "SELECT 1" || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  db-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    volumes:
+      - ./Database/Scripts:/scripts
+    entrypoint: >
+      bash -c "
+        /opt/mssql-tools/bin/sqlcmd -S sqlserver -U sa -P 'YourPassword123' -i /scripts/01_create_tables.sql &&
+        /opt/mssql-tools/bin/sqlcmd -S sqlserver -U sa -P 'YourPassword123' -i /scripts/02_seed_data.sql &&
+        echo 'Database initialized!'
+      "
+
+  auth-service:
+    build:
+      context: ./Services/AuthService
+      dockerfile: Dockerfile
+    container_name: bcp-auth-service
+    ports:
+      - "5001:5001"
+    environment:
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=BCPQRSystem;User Id=sa;Password=YourPassword123;TrustServerCertificate=True;
+      - Urls=http://0.0.0.0:5001
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/swagger || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  qr-service:
+    build:
+      context: ./Services/QRService
+      dockerfile: Dockerfile
+    container_name: bcp-qr-service
+    ports:
+      - "5002:5002"
+    environment:
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=BCPQRSystem;User Id=sa;Password=YourPassword123;TrustServerCertificate=True;
+      - Urls=http://0.0.0.0:5002
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+
+  bcp-mock-service:
+    build:
+      context: ./Services/BcpMockService
+      dockerfile: Dockerfile
+    container_name: bcp-mock-service
+    ports:
+      - "5005:5005"
+    environment:
+      - Urls=http://0.0.0.0:5005
+
+  transaction-service:
+    build:
+      context: ./Services/TransactionService
+      dockerfile: Dockerfile
+    container_name: bcp-transaction-service
+    ports:
+      - "5003:5003"
+    environment:
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=BCPQRSystem;User Id=sa;Password=YourPassword123;TrustServerCertificate=True;
+      - BcpMockService__BaseUrl=http://bcp-mock-service:5005
+      - Urls=http://0.0.0.0:5003
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      bcp-mock-service:
+        condition: service_started
+
+  reporting-service:
+    build:
+      context: ./Services/ReportingService
+      dockerfile: Dockerfile
+    container_name: bcp-reporting-service
+    ports:
+      - "5004:5004"
+    environment:
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=BCPQRSystem;User Id=sa;Password=YourPassword123;TrustServerCertificate=True;
+      - Urls=http://0.0.0.0:5004
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: ./ApiGateway
+      dockerfile: Dockerfile
+    container_name: bcp-api-gateway
+    ports:
+      - "5000:5000"
+    environment:
+      - ReverseProxy__Clusters__auth-cluster__Destinations__dest1__Address=http://auth-service:5001/
+      - ReverseProxy__Clusters__qr-cluster__Destinations__dest1__Address=http://qr-service:5002/
+      - ReverseProxy__Clusters__transactions-cluster__Destinations__dest1__Address=http://transaction-service:5003/
+      - ReverseProxy__Clusters__reports-cluster__Destinations__dest1__Address=http://reporting-service:5004/
+      - Urls=http://0.0.0.0:5000
+    depends_on:
+      - auth-service
+      - qr-service
+      - transaction-service
+      - reporting-service
+
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    container_name: bcp-frontend
+    ports:
+      - "5006:5006"
+    environment:
+      - ApiGateway__BaseUrl=http://api-gateway:5000
+      - Urls=http://0.0.0.0:5006
+    depends_on:
+      - api-gateway
+
+volumes:
+  sqlserver_data:

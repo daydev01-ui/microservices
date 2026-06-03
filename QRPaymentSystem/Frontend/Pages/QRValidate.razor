@@ -1,0 +1,64 @@
+@page "/qr/validate"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject Frontend.Services.ApiService Api
+@using System.Text.Json
+
+<PageTitle>Validar Pago - BCP QR System</PageTitle>
+
+<h2 class="mb-4"><i class="bi bi-check-circle text-success me-2"></i>Validar Pago QR</h2>
+
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Código QR</label>
+                    <input type="text" class="form-control form-control-lg" @bind="codigoQr"
+                           placeholder="QR-BCP-XXXXXXXXXX" />
+                </div>
+                <button class="btn btn-success w-100" @onclick="ValidatePago" disabled="@isLoading">
+                    @if (isLoading) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                    <i class="bi bi-shield-check me-2"></i>Validar Pago
+                </button>
+
+                @if (result.HasValue)
+                {
+                    var estado = result.Value.GetProperty("estado").GetString();
+                    <div class="mt-4 p-4 rounded @(estado == "Validada" ? "bg-success text-white" : "bg-danger text-white")">
+                        <h4>@(estado == "Validada" ? "✓ Pago Confirmado" : "✗ Pago Rechazado")</h4>
+                        <p class="mb-1">@result.Value.GetProperty("mensaje").GetString()</p>
+                        @if (result.Value.TryGetProperty("referencia", out var refEl) && refEl.ValueKind != JsonValueKind.Null)
+                            <p class="mb-1"><strong>Referencia:</strong> @refEl.GetString()</p>
+                        @if (result.Value.TryGetProperty("monto", out var montoEl) && montoEl.ValueKind != JsonValueKind.Null)
+                            <p class="mb-0"><strong>Monto:</strong> Bs. @montoEl.GetDecimal().ToString("N2")</p>
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(errorMsg))
+                {
+                    <div class="alert alert-warning mt-4">@errorMsg</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string codigoQr = "";
+    private bool isLoading = false;
+    private JsonElement? result = null;
+    private string errorMsg = "";
+
+    private async Task ValidatePago()
+    {
+        isLoading = true; result = null; errorMsg = "";
+        var (success, data, error) = await Api.PostAsync<JsonElement>(
+            "/transactions/api/transactions/validate",
+            new { codigoQr });
+
+        if (success && data.HasValue)
+            result = data;
+        else
+            errorMsg = "No se pudo validar el pago. Verifique el código QR.";
+        isLoading = false;
+    }
+}

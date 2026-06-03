@@ -1,0 +1,113 @@
+@page "/transactions"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject Frontend.Services.ApiService Api
+@using System.Text.Json
+
+<PageTitle>Transacciones - BCP QR System</PageTitle>
+
+<h2 class="mb-4"><i class="bi bi-list-ul text-primary me-2"></i>Transacciones</h2>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label">Desde</label>
+                <input type="date" class="form-control" @bind="startDate" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Hasta</label>
+                <input type="date" class="form-control" @bind="endDate" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Estado</label>
+                <select class="form-select" @bind="estado">
+                    <option value="">Todos</option>
+                    <option>Validada</option>
+                    <option>Rechazada</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100" @onclick="LoadTransactions">
+                    <i class="bi bi-search me-1"></i>Buscar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (isLoading)
+    <div class="text-center py-4"><div class="spinner-border text-primary"></div></div>
+else
+{
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th><th>Fecha</th><th>Estado</th>
+                        <th>Código QR</th><th>Empresa</th><th>Monto</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (transactions.Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center py-4 text-muted">No hay transacciones</td></tr>
+                    }
+                    @foreach (var tx in transactions)
+                    {
+                        <tr>
+                            <td>@tx.GetProperty("idTransaccion").GetInt32()</td>
+                            <td>@tx.GetProperty("fechaTransaccion").GetDateTime().ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>
+                                @{var est = tx.GetProperty("estadoTransaccion").GetString();}
+                                <span class="badge @(est == "Validada" ? "bg-success" : "bg-danger")">@est</span>
+                            </td>
+                            <td><code>@(tx.TryGetProperty("codigoQR", out var cqr) ? cqr.GetString() : "")</code></td>
+                            <td>@(tx.TryGetProperty("nombreEmpresa", out var emp) ? emp.GetString() : "")</td>
+                            <td>Bs. @(tx.TryGetProperty("monto", out var m) && m.ValueKind != JsonValueKind.Null ? m.GetDecimal().ToString("N2") : "0.00")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mt-3">
+        <span>Página @currentPage de @totalPages (Total: @total)</span>
+        <div>
+            <button class="btn btn-outline-primary btn-sm me-2" @onclick="PrevPage" disabled="@(currentPage <= 1)">‹ Anterior</button>
+            <button class="btn btn-outline-primary btn-sm" @onclick="NextPage" disabled="@(currentPage >= totalPages)">Siguiente ›</button>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private List<JsonElement> transactions = new();
+    private DateTime? startDate, endDate;
+    private string estado = "";
+    private int currentPage = 1, totalPages = 1, total = 0;
+
+    protected override async Task OnInitializedAsync() => await LoadTransactions();
+
+    private async Task LoadTransactions()
+    {
+        isLoading = true;
+        var url = $"/transactions/api/transactions?page={currentPage}&pageSize=20";
+        if (startDate.HasValue) url += $"&startDate={startDate:yyyy-MM-dd}";
+        if (endDate.HasValue) url += $"&endDate={endDate:yyyy-MM-dd}";
+        if (!string.IsNullOrEmpty(estado)) url += $"&estado={estado}";
+
+        var data = await Api.GetAsync<JsonElement>(url);
+        if (data.HasValue)
+        {
+            total = data.Value.GetProperty("total").GetInt32();
+            totalPages = data.Value.GetProperty("totalPages").GetInt32();
+            transactions = data.Value.GetProperty("data").EnumerateArray().ToList();
+        }
+        isLoading = false;
+    }
+
+    private async Task PrevPage() { if (currentPage > 1) { currentPage--; await LoadTransactions(); } }
+    private async Task NextPage() { if (currentPage < totalPages) { currentPage++; await LoadTransactions(); } }
+}

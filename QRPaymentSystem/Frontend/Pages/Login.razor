@@ -1,0 +1,76 @@
+@page "/login"
+@inject Frontend.Services.ApiService Api
+@inject NavigationManager Navigation
+@inject Blazored.LocalStorage.ILocalStorageService LocalStorage
+@inject Frontend.Services.CustomAuthStateProvider AuthProvider
+@using System.Text.Json
+
+<PageTitle>Iniciar Sesión - BCP QR System</PageTitle>
+
+<div class="min-vh-100 d-flex align-items-center justify-content-center bg-primary bg-gradient">
+    <div class="card shadow-lg" style="width:400px">
+        <div class="card-body p-5">
+            <div class="text-center mb-4">
+                <i class="bi bi-qr-code text-primary" style="font-size:3rem"></i>
+                <h3 class="mt-2 fw-bold">BCP QR Payment</h3>
+                <p class="text-muted">Sistema de Pagos QR - Bolivia</p>
+            </div>
+
+            @if (!string.IsNullOrEmpty(errorMsg))
+            {
+                <div class="alert alert-danger">@errorMsg</div>
+            }
+
+            <EditForm Model="loginModel" OnValidSubmit="DoLogin">
+                <DataAnnotationsValidator />
+                <div class="mb-3">
+                    <label class="form-label">Correo Electrónico</label>
+                    <input type="email" class="form-control" @bind="loginModel.CorreoElectronico" placeholder="usuario@bcp.com" />
+                </div>
+                <div class="mb-4">
+                    <label class="form-label">Contraseña</label>
+                    <input type="password" class="form-control" @bind="loginModel.Contraseña" placeholder="••••••••" />
+                </div>
+                <button type="submit" class="btn btn-primary w-100" disabled="@isLoading">
+                    @if (isLoading) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                    Iniciar Sesión
+                </button>
+            </EditForm>
+        </div>
+    </div>
+</div>
+
+@code {
+    private LoginModel loginModel = new();
+    private string errorMsg = "";
+    private bool isLoading = false;
+
+    private async Task DoLogin()
+    {
+        isLoading = true; errorMsg = "";
+        var (success, data, error) = await Api.PostAsync<JsonElement>(
+            "/auth/api/auth/login",
+            new { loginModel.CorreoElectronico, loginModel.Contraseña });
+
+        if (success && data.HasValue)
+        {
+            var token = data.Value.GetProperty("token").GetString() ?? "";
+            var rol = data.Value.GetProperty("rol").GetString() ?? "";
+            await LocalStorage.SetItemAsStringAsync("jwt_token", token);
+            await LocalStorage.SetItemAsStringAsync("user_role", rol);
+            AuthProvider.NotifyAuthStateChanged();
+            Navigation.NavigateTo("/", forceLoad: true);
+        }
+        else
+        {
+            errorMsg = "Credenciales inválidas. Verifique su correo y contraseña.";
+        }
+        isLoading = false;
+    }
+
+    class LoginModel
+    {
+        public string CorreoElectronico { get; set; } = "";
+        public string Contraseña { get; set; } = "";
+    }
+}

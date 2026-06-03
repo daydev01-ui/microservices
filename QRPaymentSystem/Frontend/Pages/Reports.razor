@@ -1,0 +1,132 @@
+@page "/reports"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject Frontend.Services.ApiService Api
+@inject IJSRuntime JS
+@using System.Text.Json
+
+<PageTitle>Reportes - BCP QR System</PageTitle>
+
+<h2 class="mb-4"><i class="bi bi-bar-chart text-primary me-2"></i>Reportes</h2>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">Fecha Inicio</label>
+                <input type="date" class="form-control" @bind="startDate" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Fecha Fin</label>
+                <input type="date" class="form-control" @bind="endDate" />
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100" @onclick="LoadReport">
+                    <i class="bi bi-search me-1"></i>Generar
+                </button>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-success w-100" @onclick="ExportExcel" disabled="@isExporting">
+                    @if (isExporting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (isLoading)
+    <div class="text-center py-4"><div class="spinner-border text-primary"></div></div>
+else if (report.HasValue)
+{
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-primary text-white">
+                <div class="card-body text-center">
+                    <h3 class="fw-bold">@report.Value.GetProperty("totalTransacciones").GetInt32()</h3>
+                    <p class="mb-0">Total Transacciones</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-success text-white">
+                <div class="card-body text-center">
+                    <h3 class="fw-bold">@report.Value.GetProperty("totalValidadas").GetInt32()</h3>
+                    <p class="mb-0">Validadas</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-danger text-white">
+                <div class="card-body text-center">
+                    <h3 class="fw-bold">@report.Value.GetProperty("totalRechazadas").GetInt32()</h3>
+                    <p class="mb-0">Rechazadas</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-warning text-white">
+                <div class="card-body text-center">
+                    <h3 class="fw-bold">Bs. @report.Value.GetProperty("montoTotal").GetDecimal().ToString("N2")</h3>
+                    <p class="mb-0">Monto Total</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-header"><h6 class="mb-0">Detalle de Transacciones</h6></div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-secondary">
+                    <tr><th>ID</th><th>Fecha</th><th>Estado</th><th>Empresa</th><th>Monto</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var tx in report.Value.GetProperty("transacciones").EnumerateArray().Take(50))
+                    {
+                        <tr>
+                            <td>@tx.GetProperty("idTransaccion").GetInt32()</td>
+                            <td>@tx.GetProperty("fechaTransaccion").GetDateTime().ToString("dd/MM/yy HH:mm")</td>
+                            <td>
+                                @{var est = tx.GetProperty("estadoTransaccion").GetString();}
+                                <span class="badge @(est == "Validada" ? "bg-success" : "bg-danger")">@est</span>
+                            </td>
+                            <td>@(tx.TryGetProperty("nombreEmpresa", out var emp) ? emp.GetString() : "")</td>
+                            <td>Bs. @(tx.TryGetProperty("monto", out var m) && m.ValueKind != JsonValueKind.Null ? m.GetDecimal().ToString("N2") : "0.00")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = false, isExporting = false;
+    private DateTime? startDate, endDate;
+    private JsonElement? report = null;
+
+    protected override async Task OnInitializedAsync() => await LoadReport();
+
+    private async Task LoadReport()
+    {
+        isLoading = true;
+        var url = "/reports/api/reports";
+        if (startDate.HasValue) url += $"?startDate={startDate:yyyy-MM-dd}";
+        if (endDate.HasValue) url += (startDate.HasValue ? "&" : "?") + $"endDate={endDate:yyyy-MM-dd}";
+        report = await Api.GetAsync<JsonElement>(url);
+        isLoading = false;
+    }
+
+    private async Task ExportExcel()
+    {
+        isExporting = true;
+        var url = "/reports/api/reports/export?format=excel";
+        if (startDate.HasValue) url += $"&startDate={startDate:yyyy-MM-dd}";
+        if (endDate.HasValue) url += $"&endDate={endDate:yyyy-MM-dd}";
+        var bytes = await Api.GetBytesAsync(url);
+        if (bytes != null)
+            await JS.InvokeVoidAsync("downloadFile", bytes, $"reporte_{DateTime.Now:yyyyMMdd}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        isExporting = false;
+    }
+}
